@@ -74,16 +74,31 @@ def find_axis(a, b):
     return [a.x - b.x, a.y - b.y, a.z - b.z]
 
 
-def rotate(face_landmark, first_rotate):
+def sign(x):
+    if x > 0:
+        return 1
+    else:
+        return -1
+
+
+def rotate(face_landmark, first_rotate, img):
     org = face_landmark.landmark[0]
     up = face_landmark.landmark[10]
     down = face_landmark.landmark[152]
     left = face_landmark.landmark[234]
     right = face_landmark.landmark[454]
 
+    h_train, w_train = image_train.shape[0], image_train.shape[1]
     x_axis_train = find_axis(right, left)
+    img = cv2.line(img, (int(right.x * w_train), int(right.y * h_train)),
+                   (int(left.x * w_train), int(left.y * h_train)), (0, 255, 0), 2)
     y_axis_train = find_axis(down, up)
+    img = cv2.line(img, (int(down.x * w_train), int(down.y * h_train)),
+                   (int(up.x * w_train), int(up.y * h_train)), (0, 0, 255), 2)
     z_axis_train = np.cross(x_axis_train, y_axis_train)
+    # z_axis_train[0] = sin(org.x) * abs(z_axis_train[0])
+    # z_axis_train[1] = sin(org.y) * abs(z_axis_train[1])
+    # z_axis_train[2] = sin(org.z) * abs(z_axis_train[2])
 
     if first_rotate:
         cos_z = z_axis_train[2] / (math.sqrt(z_axis_train[0] ** 2 + z_axis_train[2] ** 2))
@@ -100,6 +115,36 @@ def rotate(face_landmark, first_rotate):
             result = y_rotate_c(point.x - org.x, point.y - org.y, point.z - org.z, cos_z, sin_z)
         else:
             result = x_rotate_c(point.x - org.x, point.y - org.y, point.z - org.z, cos_z, sin_z)
+        new_land_mark[number].x = result[0] + org.x
+        new_land_mark[number].y = result[1] + org.y
+        new_land_mark[number].z = result[2] + org.z
+        number += 1
+    return face_landmark, img
+
+
+def length(a):
+    x, y, z = a[0], a[1], a[2]
+    return math.sqrt(x ** 2 + y ** 2 + z ** 2)
+
+
+def make_2d_axis_normal(face_landmark):
+    org = face_landmark.landmark[0]
+    up = face_landmark.landmark[10]
+    down = face_landmark.landmark[152]
+    left = face_landmark.landmark[234]
+    right = face_landmark.landmark[454]
+    x_axis_train = find_axis(right, left)
+    y_axis_train = find_axis(down, up)
+    print(x_axis_train)
+    print(y_axis_train)
+    cos_teta = np.dot(x_axis_train, y_axis_train) / (length(x_axis_train) * length(y_axis_train))
+    print(cos_teta)
+    sin_teta = math.sqrt(1 - cos_teta ** 2)
+    new_land_mark = face_landmark.landmark
+    number = 0
+
+    for point in face_landmark.landmark:
+        result = z_rotate_c(point.x - org.x, point.y - org.y, point.z - org.z, cos_teta, sin_teta)
         new_land_mark[number].x = result[0] + org.x
         new_land_mark[number].y = result[1] + org.y
         new_land_mark[number].z = result[2] + org.z
@@ -144,15 +189,17 @@ def draw_on_image(img, land_mark, file_name):
 
 def compare(train, test, image_train, image_test):
     h_train, w_train = image_train.shape[0], image_train.shape[1]
-    land_train = rotate(train, False)
-    land_train = rotate(land_train, True)
-    land_train = shift_to_center(land_train, w_train, h_train)
+    # land_train = make_2d_axis_normal(train)
+    land_train = shift_to_center(train, w_train, h_train)
+    land_train, image_train = rotate(land_train, False, image_train)
+    land_train, image_train = rotate(land_train, True, image_train)
     draw_on_image(image_train, land_train, "res/train")
 
     h_test, w_test = image_test.shape[0], image_test.shape[1]
-    land_test = rotate(test, False)
-    land_test = rotate(land_test, True)
-    land_test = shift_to_center(land_test, w_test, h_test)
+    # land_train = make_2d_axis_normal(test)
+    land_test = shift_to_center(test, w_test, h_test)
+    land_test, image_test = rotate(land_test, False, image_test)
+    land_test, image_test = rotate(land_test, True, image_test)
     draw_on_image(image_test, land_test, "res/test")
 
     diff = 0
@@ -176,9 +223,11 @@ with mp_face_mesh.FaceMesh(
         static_image_mode=True,
         max_num_faces=1,
         min_detection_confidence=0.5) as face_mesh:
+    # for i in range(1, 2):
     train_1, image_train = find_face(IMAGE_FILES[0])
-    test_1, image_test = find_face(IMAGE_FILES[7])
+
+    test_1, image_test = find_face(IMAGE_FILES[4])
 
     result = compare(train_1, test_1, image_train, image_test)
 
-    # cv2.imshow('MediaPipe FaceMesh', annotated_image
+# cv2.imshow('MediaPipe FaceMesh', annotated_image
